@@ -1,6 +1,9 @@
 """The process exit-code contract.
 
-These five values (0-4) are the complete v1 contract.
+Values 0-4 are the complete v1 contract and keep their original meanings
+unchanged in v0.2. ``EXIT_INTERRUPTED`` (130) is new in v0.2, additive:
+the standard Unix convention (128 + SIGINT's signal number 2) for a
+process a user deliberately interrupted with Ctrl+C.
 """
 
 from __future__ import annotations
@@ -14,6 +17,7 @@ EXIT_POLICY_VIOLATION: Final = 1
 EXIT_INVALID_USAGE: Final = 2
 EXIT_INCOMPLETE: Final = 3
 EXIT_INTERNAL_ERROR: Final = 4
+EXIT_INTERRUPTED: Final = 130
 
 _EXIT_CODE_BY_STATUS: Final[dict[ResultStatus, int]] = {
     ResultStatus.PASS: EXIT_OK,

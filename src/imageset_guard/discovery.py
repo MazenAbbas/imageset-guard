@@ -47,6 +47,16 @@ from imageset_guard.models import validate_relative_path as _validate_relative_p
 _VALID_SPLITS: Final[tuple[str, ...]] = ("train", "validation", "test")
 _OPTIONAL_SPLITS: Final[tuple[str, ...]] = ("validation", "test")
 
+#: The two dataset layouts v0.2 can interpret unambiguously:
+#: ``split-class`` is ``<split>/<class>/<image>`` (v0.1's only layout);
+#: ``class-only`` is ``<class>/<image>`` with no split directories at all
+#: (the layout torchvision's ``ImageFolder`` and Hugging Face's
+#: single-directory ``imagefolder`` both use). Selecting ``class-only``
+#: treats the whole dataset root as one implicit ``train`` split -- every
+#: candidate's reported ``split`` is ``"train"``, exactly as if the class
+#: directories had been placed under a literal ``train/`` folder.
+Layout = Literal["split-class", "class-only"]
+
 _WINDOWS_RESERVED_STEMS: Final[frozenset[str]] = frozenset(
     {"CON", "PRN", "AUX", "NUL"}
     | {f"COM{i}" for i in range(1, 10)}
@@ -74,8 +84,16 @@ class _SplitEnumeration(NamedTuple):
     direct_level_complete: bool
 
 
-def discover(dataset_root: Path) -> DiscoveryResult:
+def discover(dataset_root: Path, *, layout: Layout = "split-class") -> DiscoveryResult:
     """Discover the structure of the dataset rooted at ``dataset_root``.
+
+    ``layout`` selects how ``dataset_root`` itself is interpreted --
+    ``"split-class"`` (the default, v0.1's only layout) expects
+    ``train``/``validation``/``test`` subdirectories; ``"class-only"``
+    expects class directories directly under ``dataset_root`` with no
+    split concept at all, reported as a single implicit ``train`` split.
+    There is no automatic layout detection: the caller (the CLI) must
+    choose explicitly, so a dataset is never silently reinterpreted.
 
     ``dataset_root`` is resolved to an absolute, canonical path internally
     (it may be given as relative, e.g. ``Path(".")``). This is the one
@@ -107,7 +125,10 @@ def discover(dataset_root: Path) -> DiscoveryResult:
             candidates=(), findings=(), scan_errors=tuple(state.scan_errors), class_counts=()
         )
 
-    _discover_root(dataset_root, state)
+    if layout == "class-only":
+        _discover_root_class_only(dataset_root, state)
+    else:
+        _discover_root(dataset_root, state)
 
     class_counts = _build_class_counts(state)
 
@@ -420,6 +441,34 @@ def _link_skipped_finding(relative_path: str, link_type: str) -> Finding:
 # ---------------------------------------------------------------------------
 # Root level
 # ---------------------------------------------------------------------------
+
+
+def _discover_root_class_only(dataset_root: Path, state: _DiscoveryState) -> None:
+    """Discover a ``class-only`` (``<class>/<image>``) dataset root.
+
+    Reuses :func:`_discover_split` unchanged, treating ``dataset_root``
+    itself as the single implicit ``train`` split -- every class-subtree
+    walk, portability check, link/junction/cycle protection, and candidate
+    classification is identical to the split-class layout's; only the
+    root-level dispatch (which directory names are "splits") differs.
+    """
+    enumeration = _discover_split(dataset_root, "train", state)
+    state.class_dirs_by_split["train"] = enumeration.class_names
+    state.split_direct_level_complete["train"] = enumeration.direct_level_complete
+    if enumeration.direct_level_complete and not enumeration.class_names:
+        state.findings.append(
+            Finding(
+                code=codes.SPLIT_TRAIN_HAS_NO_CLASSES,
+                severity=Severity.ERROR,
+                category=Category.STRUCTURE,
+                message=codes.DEFAULT_MESSAGES[codes.SPLIT_TRAIN_HAS_NO_CLASSES],
+                relative_path=None,
+                remediation="Add at least one class subdirectory to the dataset root.",
+            )
+        )
+    # No cross-split comparison: class-only datasets have exactly one
+    # (implicit) split, so SPLIT_CLASS_MISSING_FROM_TRAIN/_OPTIONAL_SPLIT
+    # can never apply.
 
 
 def _discover_root(dataset_root: Path, state: _DiscoveryState) -> None:

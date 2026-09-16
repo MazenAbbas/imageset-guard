@@ -16,7 +16,7 @@ from imageset_guard.inspection_models import InspectionResult
 from imageset_guard.models import ResultStatus
 from imageset_guard.policy import Policy
 from imageset_guard.scanner import scan_dataset
-from imageset_guard.serialization import serialize_scan_result
+from imageset_guard.serialization import serialize_report
 
 
 def _save(path: Path, color: str = "red", *, size: tuple[int, int] = (5, 5)) -> None:
@@ -28,10 +28,11 @@ def test_valid_unique_dataset_passes_without_modifying_files(tmp_path: Path) -> 
     image = tmp_path / "train" / "cats" / "a.jpg"
     _save(image)
     before = hashlib.sha256(image.read_bytes()).digest()
-    result = scan_dataset(tmp_path)
+    result, profile = scan_dataset(tmp_path)
     after = hashlib.sha256(image.read_bytes()).digest()
     assert result.status is ResultStatus.PASS
     assert result.summary.examined_file_count == 1
+    assert profile.accepted_count == 1
     assert before == after
 
 
@@ -44,19 +45,20 @@ def test_invalid_image_and_exact_split_duplicate_reach_one_result(tmp_path: Path
     validation.write_bytes(train.read_bytes())
     invalid.write_bytes(b"not an image")
 
-    result = scan_dataset(tmp_path)
+    result, profile = scan_dataset(tmp_path)
     assert result.status is ResultStatus.FAIL
     assert {finding.code for finding in result.findings} == {
         codes.IMG_UNIDENTIFIED_IMAGE,
         codes.DUP_ACROSS_SPLITS,
     }
     assert result.summary.examined_file_count == 3
+    assert profile.rejected_count == 1
 
 
 def test_policy_is_applied_by_composed_engine(tmp_path: Path) -> None:
     image = tmp_path / "train" / "cats" / "large.jpg"
     _save(image, size=(10, 10))
-    result = scan_dataset(tmp_path, Policy(max_pixels=50))
+    result, _profile = scan_dataset(tmp_path, Policy(max_pixels=50))
     assert [finding.code for finding in result.findings] == [codes.IMG_PIXEL_LIMIT_EXCEEDED]
 
 
@@ -66,7 +68,8 @@ def test_report_has_no_absolute_path_or_internal_digest(tmp_path: Path) -> None:
     _save(first)
     second.parent.mkdir(parents=True)
     second.write_bytes(first.read_bytes())
-    payload = serialize_scan_result(scan_dataset(tmp_path)).decode("utf-8")
+    result, profile = scan_dataset(tmp_path)
+    payload = serialize_report(result, profile).decode("utf-8")
     digest = hashlib.sha256(first.read_bytes()).hexdigest()
     assert str(tmp_path) not in payload
     assert digest not in payload
@@ -74,8 +77,10 @@ def test_report_has_no_absolute_path_or_internal_digest(tmp_path: Path) -> None:
 
 def test_scan_result_is_byte_deterministic(tmp_path: Path) -> None:
     _save(tmp_path / "train" / "cats" / "a.jpg")
-    first = serialize_scan_result(scan_dataset(tmp_path))
-    second = serialize_scan_result(scan_dataset(tmp_path))
+    first_result, first_profile = scan_dataset(tmp_path)
+    second_result, second_profile = scan_dataset(tmp_path)
+    first = serialize_report(first_result, first_profile)
+    second = serialize_report(second_result, second_profile)
     assert first == second
 
 
@@ -84,8 +89,11 @@ def test_replacement_between_inspection_and_hashing_makes_scan_incomplete(
 ) -> None:
     image = tmp_path / "train" / "cats" / "a.jpg"
     _save(image, "red")
+
     def inspect_then_replace(
-        candidates: Iterable[DiscoveredImageCandidate], policy: Policy | None = None
+        candidates: Iterable[DiscoveredImageCandidate],
+        policy: Policy | None = None,
+        **kwargs: object,
     ) -> InspectionResult:
         result = real_inspect_candidates(candidates, policy)
         replacement = tmp_path / "replacement.jpg"
@@ -94,7 +102,7 @@ def test_replacement_between_inspection_and_hashing_makes_scan_incomplete(
         return result
 
     monkeypatch.setattr(scanner, "inspect_candidates", inspect_then_replace)
-    result = scan_dataset(tmp_path)
+    result, _profile = scan_dataset(tmp_path)
     assert result.status is ResultStatus.INCOMPLETE
     assert [error.code for error in result.scan_errors] == [codes.SYS_CANDIDATE_CHANGED]
     assert result.findings == ()

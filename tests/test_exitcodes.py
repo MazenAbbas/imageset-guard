@@ -16,6 +16,7 @@ import pytest
 from imageset_guard.exitcodes import (
     EXIT_INCOMPLETE,
     EXIT_INTERNAL_ERROR,
+    EXIT_INTERRUPTED,
     EXIT_INVALID_USAGE,
     EXIT_OK,
     EXIT_POLICY_VIOLATION,
@@ -30,6 +31,12 @@ def test_exit_constants_match_the_approved_contract() -> None:
     assert EXIT_INVALID_USAGE == 2
     assert EXIT_INCOMPLETE == 3
     assert EXIT_INTERNAL_ERROR == 4
+
+
+def test_exit_interrupted_is_the_new_v02_additive_code() -> None:
+    # 130 = 128 + SIGINT(2), the standard Unix convention. New in v0.2;
+    # every code above is unchanged from v0.1.
+    assert EXIT_INTERRUPTED == 130
 
 
 @pytest.mark.parametrize(

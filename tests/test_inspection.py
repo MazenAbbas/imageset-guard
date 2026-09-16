@@ -351,3 +351,102 @@ def test_results_are_json_serializable_without_absolute_path(tmp_path: Path) -> 
     }
     payload = json.dumps(public)
     assert str(tmp_path) not in payload
+
+
+# ---------------------------------------------------------------------------
+# v0.2: per-image policy findings and profile accumulation, through the
+# real Pillow decode path (not synthetic values) -- proves the wiring in
+# _inspect_stream, not just the pure policy_eval functions in isolation.
+# ---------------------------------------------------------------------------
+
+
+def test_policy_min_width_violation_fires_through_real_decode(tmp_path: Path) -> None:
+    path = tmp_path / "small.jpg"
+    _save_image(path, image_format="JPEG")  # 8x6
+    policy = Policy(min_width=100)
+    result = inspect_candidate(_candidate(path), policy)
+    assert codes.POLICY_WIDTH_OUT_OF_BOUNDS in _codes(result)
+    finding = next(f for f in result.findings if f.code == codes.POLICY_WIDTH_OUT_OF_BOUNDS)
+    assert finding.category.value == "policy"
+    assert finding.evidence == {"width": 8, "min_width": 100}
+
+
+def test_policy_exif_forbidden_fires_alongside_priv001(tmp_path: Path) -> None:
+    path = tmp_path / "with_exif.jpg"
+    exif = Image.Exif()
+    exif[305] = "camera-software"
+    _save_image(path, image_format="JPEG", exif=exif)
+    policy = Policy(exif_policy="forbid")
+    result = inspect_candidate(_candidate(path), policy)
+    codes_seen = _codes(result)
+    # Both fire -- the unconditional PRIV001 keeps its original meaning,
+    # and the new POLICY001 is additive, never a replacement for it.
+    assert codes.PRIV_EXIF_PRESENT in codes_seen
+    assert codes.POLICY_EXIF_FORBIDDEN in codes_seen
+
+
+def test_policy_allowed_formats_violation_still_hash_eligible(tmp_path: Path) -> None:
+    # A policy-format violation is a POLICY finding, not an INTEGRITY
+    # error -- it must never block hashing/duplicate detection.
+    from imageset_guard.hashing import is_hash_eligible
+
+    path = tmp_path / "clean.jpg"
+    _save_image(path, image_format="JPEG")
+    policy = Policy(allowed_formats=frozenset({"PNG"}))
+    result = inspect_candidate(_candidate(path), policy)
+    assert codes.POLICY_FORMAT_NOT_ALLOWED in _codes(result)
+    assert is_hash_eligible(result) is True
+
+
+def test_no_policy_configured_produces_no_policy_category_findings(tmp_path: Path) -> None:
+    path = tmp_path / "clean.jpg"
+    _save_image(path, image_format="JPEG")
+    result = inspect_candidate(_candidate(path))  # default Policy()
+    assert all(f.category.value != "policy" for f in result.findings)
+
+
+def test_profile_accumulator_is_fed_only_for_accepted_candidates(tmp_path: Path) -> None:
+    from imageset_guard.profile import ProfileAccumulator
+
+    accepted_path = tmp_path / "clean.jpg"
+    _save_image(accepted_path, image_format="JPEG")
+    corrupt_path = tmp_path / "bad.jpg"
+    corrupt_path.write_bytes(b"not an image")
+
+    accumulator = ProfileAccumulator()
+    inspect_candidates(
+        [
+            _candidate(accepted_path, "train/cats/clean.jpg"),
+            _candidate(corrupt_path, "train/cats/bad.jpg"),
+        ],
+        profile_accumulator=accumulator,
+    )
+    assert accumulator.accepted_count == 1
+    assert accumulator.format_counts == {"JPEG": 1}
+    assert accumulator.width_bounds == (8, 8)
+
+
+def test_progress_callback_is_called_once_per_candidate_in_order(tmp_path: Path) -> None:
+    paths = [tmp_path / f"{i}.jpg" for i in range(3)]
+    for path in paths:
+        _save_image(path, image_format="JPEG")
+    candidates = [_candidate(p, f"train/cats/{p.name}") for p in paths]
+
+    calls: list[tuple[int, int]] = []
+
+    def record(done: int, total: int) -> None:
+        calls.append((done, total))
+
+    inspect_candidates(candidates, progress_callback=record)
+    assert calls == [(1, 3), (2, 3), (3, 3)]
+
+
+def test_progress_callback_exception_propagates_and_does_not_corrupt_scan(tmp_path: Path) -> None:
+    path = tmp_path / "clean.jpg"
+    _save_image(path, image_format="JPEG")
+
+    def broken_callback(done: int, total: int) -> None:
+        raise RuntimeError("progress reporter is broken")
+
+    with pytest.raises(RuntimeError, match="progress reporter is broken"):
+        inspect_candidates([_candidate(path)], progress_callback=broken_callback)

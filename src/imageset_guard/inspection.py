@@ -14,7 +14,7 @@ effort hardening rather than a security boundary (notably on Windows).
 from __future__ import annotations
 
 import warnings
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from typing import BinaryIO, Final
 
 from PIL import Image, ImageFile, UnidentifiedImageError
@@ -37,6 +37,8 @@ from imageset_guard.models import (
     scan_error_sort_key,
 )
 from imageset_guard.policy import SUPPORTED_FORMATS, Policy
+from imageset_guard.policy_eval import evaluate_image_policy
+from imageset_guard.profile import ProfileAccumulator
 
 _FORMAT_BY_EXTENSION: Final[dict[str, str]] = {
     ".jpg": "JPEG",
@@ -126,6 +128,7 @@ def _inspect_stream(
     candidate: DiscoveredImageCandidate,
     policy: Policy,
     file_identity: FileIdentity,
+    profile_accumulator: ProfileAccumulator | None,
 ) -> CandidateInspection:
     if ImageFile.LOAD_TRUNCATED_IMAGES:
         raise RuntimeError(
@@ -142,6 +145,7 @@ def _inspect_stream(
             with Image.open(stream) as image:
                 detected_format = image.format
                 width, height = image.size
+                mode = image.mode
                 frame_count = int(getattr(image, "n_frames", 1))
 
                 pixel_count = width * height
@@ -258,23 +262,54 @@ def _inspect_stream(
             )
         )
 
+    has_integrity_error = any(
+        f.category is Category.INTEGRITY and f.severity is Severity.ERROR for f in findings
+    )
+    if not has_integrity_error and detected_format is not None:
+        if profile_accumulator is not None:
+            profile_accumulator.record_accepted(
+                image_format=detected_format, mode=mode, width=width, height=height
+            )
+        findings.extend(
+            evaluate_image_policy(
+                relative_path=candidate.relative_path,
+                image_format=detected_format,
+                mode=mode,
+                width=width,
+                height=height,
+                has_exif=has_exif,
+                has_gps=has_gps,
+                policy=policy,
+            )
+        )
+
     findings.sort(key=finding_sort_key)
+
     return CandidateInspection(
         candidate.relative_path, True, tuple(findings), (), file_identity
     )
 
 
 def inspect_candidate(
-    candidate: DiscoveredImageCandidate, policy: Policy | None = None
+    candidate: DiscoveredImageCandidate,
+    policy: Policy | None = None,
+    *,
+    profile_accumulator: ProfileAccumulator | None = None,
 ) -> CandidateInspection:
-    """Inspect one discovered candidate without exposing exception or metadata values."""
+    """Inspect one discovered candidate without exposing exception or metadata values.
+
+    ``profile_accumulator``, if given, is fed this candidate's format/mode/
+    dimensions when (and only when) it is accepted -- see
+    ``imageset_guard.profile``. It is never required for a correct
+    :class:`CandidateInspection` result.
+    """
     active_policy = policy or Policy()
     if candidate.extension not in CANDIDATE_EXTENSIONS:
         raise ValueError("candidate extension is outside the v1 candidate set")
     try:
         with open_regular_file_readonly(candidate.absolute_path) as stream:
             identity = file_identity_from_stream(stream)
-            return _inspect_stream(stream, candidate, active_policy, identity)
+            return _inspect_stream(stream, candidate, active_policy, identity, profile_accumulator)
     except CandidateChangedError:
         return _changed_failure(candidate)
     except OSError as exc:
@@ -282,14 +317,33 @@ def inspect_candidate(
 
 
 def inspect_candidates(
-    candidates: Iterable[DiscoveredImageCandidate], policy: Policy | None = None
+    candidates: Iterable[DiscoveredImageCandidate],
+    policy: Policy | None = None,
+    *,
+    profile_accumulator: ProfileAccumulator | None = None,
+    progress_callback: Callable[[int, int], None] | None = None,
 ) -> InspectionResult:
-    """Inspect candidates independently and return one canonical aggregate."""
+    """Inspect candidates independently and return one canonical aggregate.
+
+    ``progress_callback``, if given, is called after every candidate with
+    ``(done, total)``. It exists only for optional CLI progress reporting;
+    it is never required for a correct result, and any exception it raises
+    propagates immediately (a broken progress reporter must not silently
+    corrupt a scan).
+    """
     active_policy = policy or Policy()
     ordered = sorted(candidates, key=lambda item: item.relative_path)
     if len({item.relative_path for item in ordered}) != len(ordered):
         raise ValueError("candidates must not contain duplicate relative paths")
-    inspections = tuple(inspect_candidate(item, active_policy) for item in ordered)
+    total = len(ordered)
+    inspections_list: list[CandidateInspection] = []
+    for done, item in enumerate(ordered, start=1):
+        inspections_list.append(
+            inspect_candidate(item, active_policy, profile_accumulator=profile_accumulator)
+        )
+        if progress_callback is not None:
+            progress_callback(done, total)
+    inspections = tuple(inspections_list)
     findings = tuple(
         sorted(
             (finding for item in inspections for finding in item.findings),

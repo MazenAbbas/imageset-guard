@@ -21,9 +21,17 @@ import json
 import os
 import tempfile
 from pathlib import Path
-from typing import Any
+from typing import Any, Final
 
 from imageset_guard.models import Finding, ScanError, ScanResult, ScanSummary
+from imageset_guard.profile_models import DatasetProfile
+
+#: The JSON report's own schema version, independent of the package
+#: version. Bump only for a deliberate, documented change to the report's
+#: field meanings; a purely additive field (a new optional key) does not
+#: require a bump. Introduced in v0.2 -- earlier reports had no explicit
+#: version field at all.
+REPORT_SCHEMA_VERSION: Final = 1
 
 
 class ReportWriteError(Exception):
@@ -71,8 +79,38 @@ def _result_to_dict(result: ScanResult) -> dict[str, Any]:
     }
 
 
-def serialize_scan_result(result: ScanResult) -> bytes:
-    """Render ``result`` as canonical, deterministic JSON bytes.
+def _profile_to_dict(profile: DatasetProfile) -> dict[str, Any]:
+    return {
+        "candidate_count": profile.candidate_count,
+        "examined_count": profile.examined_count,
+        "accepted_count": profile.accepted_count,
+        "rejected_count": profile.rejected_count,
+        "file_count_by_split": dict(profile.file_count_by_split),
+        "file_count_by_class": dict(profile.file_count_by_class),
+        "format_counts": dict(profile.format_counts),
+        "mode_counts": dict(profile.mode_counts),
+        "width_min": profile.width_min,
+        "width_max": profile.width_max,
+        "height_min": profile.height_min,
+        "height_max": profile.height_max,
+        "aspect_ratio_min": profile.aspect_ratio_min,
+        "aspect_ratio_max": profile.aspect_ratio_max,
+        "empty_classes": list(profile.empty_classes),
+        "class_balance_ratio": profile.class_balance_ratio,
+        "complete": profile.complete,
+    }
+
+
+def _report_to_dict(result: ScanResult, profile: DatasetProfile) -> dict[str, Any]:
+    return {
+        "report_schema_version": REPORT_SCHEMA_VERSION,
+        "profile": _profile_to_dict(profile),
+        **_result_to_dict(result),
+    }
+
+
+def _dump_canonical_json(payload: dict[str, Any]) -> bytes:
+    """Render ``payload`` as canonical, deterministic JSON bytes.
 
     ``allow_nan=False`` is defense in depth: ``Finding``/``ScanError``
     already reject non-finite evidence floats at construction time, so this
@@ -82,7 +120,7 @@ def serialize_scan_result(result: ScanResult) -> bytes:
     were ever defeated by a future defect.
     """
     text = json.dumps(
-        _result_to_dict(result),
+        payload,
         sort_keys=True,
         ensure_ascii=False,
         indent=2,
@@ -91,8 +129,23 @@ def serialize_scan_result(result: ScanResult) -> bytes:
     return (text + "\n").encode("utf-8")
 
 
-def write_scan_result(result: ScanResult, output_path: Path) -> None:
-    """Atomically write ``result`` as canonical JSON to ``output_path``.
+def serialize_scan_result(result: ScanResult) -> bytes:
+    """Render ``result`` alone as canonical, deterministic JSON bytes.
+
+    Kept for callers that only have a bare :class:`ScanResult` (e.g. a
+    hand-built one in a test); the public CLI report always includes the
+    dataset profile too -- see :func:`serialize_report`.
+    """
+    return _dump_canonical_json(_result_to_dict(result))
+
+
+def serialize_report(result: ScanResult, profile: DatasetProfile) -> bytes:
+    """Render ``result`` and ``profile`` together as the full v0.2+ report."""
+    return _dump_canonical_json(_report_to_dict(result, profile))
+
+
+def _atomic_write(payload: bytes, output_path: Path) -> None:
+    """Atomically write ``payload`` to ``output_path``.
 
     Writes to a temporary file in ``output_path``'s own directory first,
     then swaps it into place with ``os.replace``, so a failure never leaves
@@ -102,7 +155,6 @@ def write_scan_result(result: ScanResult, output_path: Path) -> None:
     raised as :class:`ReportWriteError`, and the temporary file is removed
     on a best-effort basis.
     """
-    payload = serialize_scan_result(result)
     directory = output_path.parent
     tmp_path: Path | None = None
     try:
@@ -130,3 +182,13 @@ def write_scan_result(result: ScanResult, output_path: Path) -> None:
 
 def _make_temp_file(directory: Path, base_name: str) -> tuple[int, str]:
     return tempfile.mkstemp(prefix=f".{base_name}.", suffix=".tmp", dir=directory)
+
+
+def write_scan_result(result: ScanResult, output_path: Path) -> None:
+    """Atomically write ``result`` alone as canonical JSON to ``output_path``."""
+    _atomic_write(serialize_scan_result(result), output_path)
+
+
+def write_report(result: ScanResult, profile: DatasetProfile, output_path: Path) -> None:
+    """Atomically write the full v0.2+ report (result + profile) to ``output_path``."""
+    _atomic_write(serialize_report(result, profile), output_path)

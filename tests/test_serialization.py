@@ -22,7 +22,37 @@ from imageset_guard.models import (
     Severity,
     build_scan_result,
 )
-from imageset_guard.serialization import ReportWriteError, serialize_scan_result, write_scan_result
+from imageset_guard.profile_models import DatasetProfile
+from imageset_guard.serialization import (
+    REPORT_SCHEMA_VERSION,
+    ReportWriteError,
+    serialize_report,
+    serialize_scan_result,
+    write_report,
+    write_scan_result,
+)
+
+
+def _sample_profile() -> DatasetProfile:
+    return DatasetProfile(
+        candidate_count=3,
+        examined_count=3,
+        accepted_count=2,
+        rejected_count=1,
+        file_count_by_split={"train": 3},
+        file_count_by_class={"قطط": 2, "dogs": 1},
+        format_counts={"JPEG": 2},
+        mode_counts={"RGB": 2},
+        width_min=10,
+        width_max=20,
+        height_min=10,
+        height_max=20,
+        aspect_ratio_min=1.0,
+        aspect_ratio_max=1.0,
+        empty_classes=(),
+        class_balance_ratio=2.0,
+        complete=True,
+    )
 
 
 def _sample_result() -> ScanResult:
@@ -214,3 +244,51 @@ def test_serialize_output_is_accepted_by_a_strict_json_parser() -> None:
     # trips it.
     parsed = json.loads(raw, parse_constant=_reject_non_standard_constants)
     assert parsed["status"] == "incomplete"
+
+
+# ---------------------------------------------------------------------------
+# v0.2: serialize_report / write_report (result + profile, schema version)
+# ---------------------------------------------------------------------------
+
+
+def test_serialize_report_includes_schema_version_and_profile() -> None:
+    payload = json.loads(serialize_report(_sample_result(), _sample_profile()))
+    assert payload["report_schema_version"] == REPORT_SCHEMA_VERSION == 1
+    assert payload["profile"]["accepted_count"] == 2
+    assert payload["profile"]["rejected_count"] == 1
+    assert payload["profile"]["file_count_by_class"] == {"قطط": 2, "dogs": 1}
+
+
+def test_serialize_report_is_a_strict_superset_of_serialize_scan_result() -> None:
+    # Additive-only: every key/value serialize_scan_result would have
+    # produced is still present, unchanged, in serialize_report's output.
+    result = _sample_result()
+    bare = json.loads(serialize_scan_result(result))
+    full = json.loads(serialize_report(result, _sample_profile()))
+    for key, value in bare.items():
+        assert full[key] == value
+    assert set(full) - set(bare) == {"report_schema_version", "profile"}
+
+
+def test_serialize_report_is_deterministic() -> None:
+    result, profile = _sample_result(), _sample_profile()
+    assert serialize_report(result, profile) == serialize_report(result, profile)
+
+
+def test_serialize_report_preserves_arabic_class_names_unescaped() -> None:
+    raw = serialize_report(_sample_result(), _sample_profile())
+    assert "قطط".encode() in raw
+    assert b"\\u0642" not in raw
+
+
+def test_write_report_creates_exact_file_content(tmp_path: Path) -> None:
+    result, profile = _sample_result(), _sample_profile()
+    output = tmp_path / "report.json"
+    write_report(result, profile, output)
+    assert output.read_bytes() == serialize_report(result, profile)
+
+
+def test_write_report_failure_raises_report_write_error(tmp_path: Path) -> None:
+    output = tmp_path / "no-such-dir" / "report.json"
+    with pytest.raises(ReportWriteError):
+        write_report(_sample_result(), _sample_profile(), output)

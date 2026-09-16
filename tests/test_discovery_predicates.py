@@ -190,8 +190,19 @@ def test_is_junction_uses_native_method_when_available_false() -> None:
     assert discovery._is_junction(entry) is False  # type: ignore[arg-type]
 
 
-def test_is_junction_falls_back_to_reparse_tag_when_method_absent() -> None:
-    mount_point_tag = getattr(stat_module, "IO_REPARSE_TAG_MOUNT_POINT", 0xA0000003)
+def test_is_junction_falls_back_to_reparse_tag_when_method_absent(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Force the Windows-only constant to exist with a known value regardless
+    # of the platform actually running this test -- on real Windows it
+    # already exists (and happens to equal this value), but on Linux/macOS
+    # it is absent, and discovery._is_mount_point_reparse_tag() correctly
+    # treats "absent" as "never a mount point" (see its docstring). Without
+    # this patch, this "pure" test silently depended on running on Windows.
+    mount_point_tag = 0xA0000003
+    monkeypatch.setattr(
+        stat_module, "IO_REPARSE_TAG_MOUNT_POINT", mount_point_tag, raising=False
+    )
     entry = _FakeEntryWithoutIsJunction(reparse_tag=mount_point_tag)
     assert discovery._is_junction(entry) is True  # type: ignore[arg-type]
 
@@ -207,8 +218,14 @@ def test_is_junction_fallback_rejects_zero_reparse_tag() -> None:
     assert discovery._is_junction(entry) is False  # type: ignore[arg-type]
 
 
-def test_is_mount_point_reparse_tag_pure() -> None:
-    mount_point_tag = getattr(stat_module, "IO_REPARSE_TAG_MOUNT_POINT", 0xA0000003)
+def test_is_mount_point_reparse_tag_pure(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Same reasoning as test_is_junction_falls_back_to_reparse_tag_when_method_absent:
+    # force the constant to exist so this test does not silently depend on
+    # running on real Windows.
+    mount_point_tag = 0xA0000003
+    monkeypatch.setattr(
+        stat_module, "IO_REPARSE_TAG_MOUNT_POINT", mount_point_tag, raising=False
+    )
     assert discovery._is_mount_point_reparse_tag(mount_point_tag) is True
     assert discovery._is_mount_point_reparse_tag(0) is False
     assert discovery._is_mount_point_reparse_tag(0xA000000C) is False

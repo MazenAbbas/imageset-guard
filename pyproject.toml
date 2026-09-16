@@ -57,6 +57,7 @@ packages = ["src/imageset_guard"]
 include = [
     "/src",
     "/tests",
+    "/docs",
     "/README.md",
     "/LICENSE",
     "/SECURITY.md",

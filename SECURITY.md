@@ -2,15 +2,15 @@
 
 ## Supported versions
 
-This project has not made a first release yet. Once released, only the
-latest published version is supported with security fixes.
+This project has not made its first stable release yet; `0.1.0rc1` is a
+pre-release candidate. Once `v0.1.0` ships, only the latest published
+version is supported with security fixes.
 
 ## Reporting a vulnerability
 
-This repository is not yet published. Once it is published on GitHub,
-report vulnerabilities privately through GitHub Security Advisories on the
-repository rather than opening a public issue. A dedicated security contact
-address will be added here before the first public release.
+Report vulnerabilities privately through GitHub Security Advisories on
+this repository rather than opening a public issue. A dedicated security
+contact address will be added here before the first stable release.
 
 Please do not open a public issue for a suspected vulnerability before a
 private reporting channel is available.

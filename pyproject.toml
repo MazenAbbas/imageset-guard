@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "imageset-guard"
-version = "0.1.0.dev0"
+version = "0.1.0rc1"
 description = "Local preflight checks for image datasets before training."
 readme = "README.md"
 license = "MIT"
@@ -61,6 +61,7 @@ include = [
     "/LICENSE",
     "/SECURITY.md",
     "/CONTRIBUTING.md",
+    "/CHANGELOG.md",
 ]
 
 [tool.pytest.ini_options]

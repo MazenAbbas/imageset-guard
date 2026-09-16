@@ -28,8 +28,9 @@ the required ``train`` split, but only a warning in an optional split) --
 that is a difference in severity for the same underlying meaning, not a
 second meaning for the code, so it does not need a second code.
 
-This project has not made a first release (version is still ``0.dev0``),
-so a code's *meaning* may still be deliberately broadened before v1 ships
+This project has not made its first stable release (version is a
+pre-release, e.g. ``0.1.0rc1``), so a code's *meaning* may still be
+deliberately broadened before v1 ships
 -- as long as it is a documented, intentional change and not a silent
 drift. ``SPLIT_LINK_SKIPPED`` (``SPLIT010``) is the one example so far: it
 originally meant "symbolic link", and was broadened to cover Windows

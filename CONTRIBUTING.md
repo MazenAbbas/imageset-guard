@@ -1,8 +1,9 @@
 # Contributing
 
 Thanks for your interest in ImageSet Guard. This document describes how to
-work on the codebase locally. The project is not yet published; this guide
-applies to working from a local checkout.
+work on the codebase locally. The project is not yet published to PyPI;
+this guide applies to working from a local checkout of the GitHub
+repository.
 
 ## Scope discipline
 

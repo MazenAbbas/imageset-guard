@@ -35,9 +35,11 @@ It produces a real `PASS`, `WARN`, `FAIL`, or `INCOMPLETE` result, prints a
 deterministic terminal summary, and can atomically write the canonical JSON
 report outside the dataset root.
 
-The project remains a pre-release (`0.1.0.dev0`). It has been exercised
-locally on Windows with Python 3.12; the configured multi-platform CI matrix
-still needs to run on the eventual GitHub repository before the first release.
+The project is at `0.1.0rc1`, its first public release candidate. It is not
+yet the final `v0.1.0` release and should not be treated as production-ready:
+it is offered for evaluation and feedback before that release. The full CI
+matrix (Windows, Linux, and macOS across Python 3.11 through 3.14) is
+configured and green on this repository.
 
 ## What ImageSet Guard is not
 
@@ -155,7 +157,7 @@ code is ever reused for a second meaning.
 
 `SPLIT010`'s meaning was deliberately broadened from "symbolic link" to
 "symbolic link or junction" while this project is still pre-release
-(`0.dev0`); its code value did not change. `ScanError.message` is always
+(`0.1.0rc1`); its code value did not change. `ScanError.message` is always
 one of the fixed strings above — never raw OS exception text, which can
 contain an absolute path or a username.
 
@@ -283,3 +285,7 @@ an explicit statement of what this tool does and does not protect against.
 ## Contributing
 
 See [CONTRIBUTING.md](CONTRIBUTING.md).
+
+## Changelog
+
+See [CHANGELOG.md](CHANGELOG.md).

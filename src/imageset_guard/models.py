@@ -41,6 +41,14 @@ class Category(Enum):
     PRIVACY = "privacy"
     LEAKAGE = "leakage"
     STRUCTURE = "structure"
+    #: A user-configured policy limit (see ``imageset_guard.policy``) was
+    #: violated by a fact the dataset profile observed. Distinct from
+    #: STRUCTURE/INTEGRITY/PRIVACY/LEAKAGE, which describe properties of the
+    #: dataset itself: POLICY findings describe a *choice* the user made
+    #: (e.g. "class imbalance above 5:1 is not allowed here") being violated,
+    #: not a universal defect. Added in v0.2; existing categories/codes keep
+    #: their original meanings unchanged.
+    POLICY = "policy"
 
 
 _CODE_PREFIX_BY_CATEGORY: Final[dict[Category, str]] = {
@@ -48,6 +56,7 @@ _CODE_PREFIX_BY_CATEGORY: Final[dict[Category, str]] = {
     Category.PRIVACY: "PRIV",
     Category.LEAKAGE: "DUP",
     Category.STRUCTURE: "SPLIT",
+    Category.POLICY: "POLICY",
 }
 
 _SCAN_ERROR_CODE_PATTERN: Final[re.Pattern[str]] = re.compile(r"^SYS\d{3}$")

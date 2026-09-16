@@ -80,6 +80,34 @@ preflight tool, not a security boundary. Some of what follows describes
   reveal the relative directory and file names of a dataset if the report
   itself is shared — treat the report with the same care as the dataset's
   file listing.
+- Policy files (`--config`) are parsed with Python's standard-library
+  `tomllib` only — no YAML, no custom deserialization, no code execution
+  path exists for a policy file. Every key's type is checked strictly (no
+  silent coercion, e.g. a string is never accepted where an integer is
+  required); an unknown key or an unsupported `schema_version` fails
+  before any dataset is scanned, with exit code `2`. A hostile policy file
+  can, at most, cause a clear validation error — it cannot execute code or
+  reach the filesystem beyond the one file path given to `--config`.
+- Report and terminal output never echo a raw filename verbatim in a way
+  that could inject terminal control sequences: entry names containing
+  control characters are rejected by discovery before they can reach any
+  `Finding`/`ScanError` (`SYS004`), and evidence values are restricted to
+  flat, non-sensitive scalars (`str`/`int`/`float`/`bool`) — never an
+  arbitrary user-controlled string copied verbatim from file content.
+- Very large or deeply nested directory structures do not cause unbounded
+  memory growth: discovery, inspection, and the dataset profile all use
+  bounded, streaming aggregation (running counts and min/max bounds, never
+  a per-file object retained for the whole scan). Measured, repeated
+  results on one machine are in `benchmarks/README.md` — a measurement,
+  not a universal guarantee for every possible directory shape.
+- CI dependencies (`actions/checkout`, `actions/setup-python`) are pinned
+  to full commit SHAs with a human-readable version comment, not floating
+  tags, to reduce third-party GitHub Actions supply-chain risk. The
+  workflow requests only `contents: read` permission.
+- Interrupting a scan with Ctrl+C returns a documented exit code (`130`)
+  and never leaves a partially written report at the `--output`
+  destination — the same atomic write (temp file, then `os.replace`) that
+  protects against any other mid-write failure also covers this case.
 
 This tool does not claim to be "secure" or "safe" in any absolute sense. It
 narrows a specific, documented set of risks; it does not eliminate them.

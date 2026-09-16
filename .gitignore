@@ -22,3 +22,9 @@ report.json
 /tmp-dataset/
 /test-dataset/
 *.local
+
+# Benchmark scratch output, if ever generated inside the repo by mistake
+# (benchmarks/README.md documents generating it outside the repo instead).
+/benchmarks/*-dataset/
+/benchmarks/*.result.json
+result-*.json

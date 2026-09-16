@@ -211,6 +211,48 @@ SYS_UNREPRESENTABLE_NAME: Final = "SYS004"
 #: or changed while it was being read. The partial result is discarded.
 SYS_CANDIDATE_CHANGED: Final = "SYS005"
 
+# ---------------------------------------------------------------------------
+# POLICYxxx: user-configured policy violations (v0.2+)
+#
+# Every code here describes a *choice the user made* (via a policy TOML
+# file) being violated, not a universal property of the dataset. None of
+# these ever fire unless the corresponding policy field is explicitly set;
+# absent policy, v0.1 behavior is unchanged. Always an error: the whole
+# point of setting a policy limit is that crossing it is a failure.
+# ---------------------------------------------------------------------------
+
+#: EXIF metadata is present and the policy's ``exif_policy`` is "forbid".
+#: Fires in addition to (never instead of) the unconditional PRIV001.
+POLICY_EXIF_FORBIDDEN: Final = "POLICY001"
+
+#: GPS EXIF metadata is present and the policy's ``gps_policy`` is "forbid".
+#: Fires in addition to (never instead of) the unconditional PRIV002.
+POLICY_GPS_FORBIDDEN: Final = "POLICY002"
+
+#: A class has fewer accepted images than the policy's
+#: ``min_images_per_class``.
+POLICY_CLASS_TOO_SMALL: Final = "POLICY003"
+
+#: The dataset's largest-to-smallest non-empty class ratio exceeds the
+#: policy's ``max_class_imbalance_ratio``.
+POLICY_CLASS_IMBALANCE: Final = "POLICY004"
+
+#: The image's detected format is not in the policy's ``allowed_formats``.
+POLICY_FORMAT_NOT_ALLOWED: Final = "POLICY005"
+
+#: The image's Pillow color mode is not in the policy's ``allowed_modes``.
+POLICY_MODE_NOT_ALLOWED: Final = "POLICY006"
+
+#: The image's width falls outside the policy's ``min_width``/``max_width``.
+POLICY_WIDTH_OUT_OF_BOUNDS: Final = "POLICY007"
+
+#: The image's height falls outside the policy's ``min_height``/``max_height``.
+POLICY_HEIGHT_OUT_OF_BOUNDS: Final = "POLICY008"
+
+#: The image's aspect ratio falls outside the policy's
+#: ``min_aspect_ratio``/``max_aspect_ratio``.
+POLICY_ASPECT_RATIO_OUT_OF_BOUNDS: Final = "POLICY009"
+
 DEFAULT_MESSAGES: Final[dict[str, str]] = {
     SPLIT_TRAIN_MISSING: "The required 'train' split is missing.",
     SPLIT_TRAIN_NOT_A_DIRECTORY: "'train' exists but is not a directory.",
@@ -265,4 +307,15 @@ DEFAULT_MESSAGES: Final[dict[str, str]] = {
         "Entry name cannot be represented safely in the report; the entry was skipped."
     ),
     SYS_CANDIDATE_CHANGED: "Candidate changed while it was being examined; result discarded.",
+    POLICY_EXIF_FORBIDDEN: "EXIF metadata is present, and this policy forbids EXIF metadata.",
+    POLICY_GPS_FORBIDDEN: "GPS metadata is present, and this policy forbids GPS metadata.",
+    POLICY_CLASS_TOO_SMALL: "Class has fewer accepted images than this policy's minimum.",
+    POLICY_CLASS_IMBALANCE: "Class-balance ratio exceeds this policy's configured maximum.",
+    POLICY_FORMAT_NOT_ALLOWED: "Image format is not in this policy's list of allowed formats.",
+    POLICY_MODE_NOT_ALLOWED: "Image color mode is not in this policy's list of allowed modes.",
+    POLICY_WIDTH_OUT_OF_BOUNDS: "Image width is outside this policy's configured bounds.",
+    POLICY_HEIGHT_OUT_OF_BOUNDS: "Image height is outside this policy's configured bounds.",
+    POLICY_ASPECT_RATIO_OUT_OF_BOUNDS: (
+        "Image aspect ratio is outside this policy's configured bounds."
+    ),
 }

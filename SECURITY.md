@@ -2,9 +2,9 @@
 
 ## Supported versions
 
-This project has not made its first stable release yet; `0.1.0rc1` is a
-pre-release candidate. Once `v0.1.0` ships, only the latest published
-version is supported with security fixes.
+This project has not made its first stable release yet; `0.2.0rc1` is a
+pre-release candidate. Once a stable `v0.x.0` ships, only the latest
+published version is supported with security fixes.
 
 ## Reporting a vulnerability
 
